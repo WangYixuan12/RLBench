@@ -22,8 +22,7 @@ def check_and_make(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)
 
-
-def save_demo(demo, example_path):
+def save_demo(demo, init_states, example_path, variation):
 
     # Save image data first, and then None the image data, and pickle
     left_shoulder_rgb_path = os.path.join(
@@ -143,6 +142,11 @@ def save_demo(demo, example_path):
     with open(os.path.join(example_path, LOW_DIM_PICKLE), 'wb') as f:
         pickle.dump(demo, f)
 
+    with open(os.path.join(example_path, VARIATION_NUMBER), 'wb') as f:
+        pickle.dump(variation, f)
+    
+    with open(os.path.join(example_path, 'init_states.pkl'), 'wb') as f:
+        pickle.dump(init_states, f)
 
 def run(i, lock, task_index, variation_count, results, file_lock, tasks, args):
     """Each thread will choose one task and variation, and then gather
@@ -194,7 +198,8 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks, args):
         obs_config=obs_config,
         arm_max_velocity=args.arm_max_velocity,
         arm_max_acceleration=args.arm_max_acceleration,
-        headless=True)
+        headless=False,
+        static_positions=True)
     rlbench_env.launch()
 
     task_env = None
@@ -229,6 +234,10 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks, args):
 
         task_env = rlbench_env.get_task(t)
         task_env.set_variation(my_variation_count)
+        # load_states_path = "/home/yixuan/RLBench/data/push_buttons_for_test/variation0/episodes/episode0/init_states.pkl"
+        # with open(load_states_path, 'rb') as f:
+        #     load_states = pickle.load(f)
+        # descriptions, _ = task_env.reset(states=load_states)
         descriptions, _ = task_env.reset()
 
         variation_path = os.path.join(
@@ -252,9 +261,11 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks, args):
             while attempts > 0:
                 try:
                     # TODO: for now we do the explicit looping.
-                    demo, = task_env.get_demos(
+                    demo, save_states = task_env.get_demos(
                         amount=1,
-                        live_demos=True)
+                        live_demos=True,)
+                        # states=load_states)
+                    demo = demo[0]
                 except Exception as e:
                     attempts -= 1
                     if attempts > 0:
@@ -271,7 +282,7 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks, args):
                     break
                 episode_path = os.path.join(episodes_path, EPISODE_FOLDER % ex_idx)
                 with file_lock:
-                    save_demo(demo, episode_path)
+                    save_demo(demo, save_states, episode_path, my_variation_count)
                 break
             if abort_variation:
                 break
@@ -319,13 +330,14 @@ def main():
 
     check_and_make(args.save_path)
 
-    processes = [Process(
-        target=run, args=(
-            i, lock, task_index, variation_count, result_dict, file_lock,
-            tasks, args))
-        for i in range(args.processes)]
-    [t.start() for t in processes]
-    [t.join() for t in processes]
+    # processes = [Process(
+    #     target=run, args=(
+    #         i, lock, task_index, variation_count, result_dict, file_lock,
+    #         tasks, args))
+    #     for i in range(args.processes)]
+    # [t.start() for t in processes]
+    # [t.join() for t in processes]
+    run(0, lock, task_index, variation_count, result_dict, file_lock, tasks, args) # single process for debugging
 
     print('Data collection done!')
     for i in range(args.processes):

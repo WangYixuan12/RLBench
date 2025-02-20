@@ -1,4 +1,4 @@
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 import numpy as np
 from pyrep import PyRep
@@ -112,7 +112,7 @@ class Scene(object):
         self._variation_index = 0
 
     def init_episode(self, index: int, randomly_place: bool=True,
-                     max_attempts: int = 5, place_demo: bool = False) -> List[str]:
+                     max_attempts: int = 5, place_demo: bool = False, states : Optional[np.ndarray] = None) -> List[str]:
         """Calls the task init_episode and puts randomly in the workspace.
         """
 
@@ -125,7 +125,7 @@ class Scene(object):
         self._attempts = 0
         descriptions = None
         while self._attempts < max_attempts:
-            descriptions = self.task.init_episode(index)
+            descriptions = self.task.init_episode(index, states)
             try:
                 if (randomly_place and
                         not self.task.is_static_workspace()):

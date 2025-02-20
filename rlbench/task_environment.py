@@ -1,5 +1,5 @@
 import logging
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 import numpy as np
 from pyrep import PyRep
@@ -72,13 +72,13 @@ class TaskEnvironment(object):
     def variation_count(self) -> int:
         return self._task.variation_count()
 
-    def reset(self, demo = None) -> (List[str], Observation):
+    def reset(self, demo = None, states = None) -> (List[str], Observation):
         self._scene.reset()
         try:
             place_demo = demo != None and hasattr(demo, 'num_reset_attempts') and demo.num_reset_attempts != None
             desc = self._scene.init_episode(
                 self._variation_number, max_attempts=_MAX_RESET_ATTEMPTS if not place_demo else demo.num_reset_attempts,
-                randomly_place=not self._static_positions, place_demo=place_demo)
+                randomly_place=not self._static_positions, place_demo=place_demo, states=states)
         except (BoundaryError, WaypointError) as e:
             raise TaskEnvironmentError(
                 'Could not place the task %s in the scene. This should not '
@@ -113,7 +113,8 @@ class TaskEnvironment(object):
                   callable_each_step: Callable[[Observation], None] = None,
                   max_attempts: int = _MAX_DEMO_ATTEMPTS,
                   random_selection: bool = True,
-                  from_episode_number: int = 0
+                  from_episode_number: int = 0,
+                  states: Optional[np.ndarray] = None,
                   ) -> List[Demo]:
         """Negative means all demos"""
 
@@ -133,21 +134,27 @@ class TaskEnvironment(object):
         else:
             ctr_loop = self._robot.arm.joints[0].is_control_loop_enabled()
             self._robot.arm.set_control_loop_enabled(True)
-            demos = self._get_live_demos(
-                amount, callable_each_step, max_attempts)
+            demos, save_states = self._get_live_demos(
+                amount, callable_each_step, max_attempts, states=states)
             self._robot.arm.set_control_loop_enabled(ctr_loop)
-        return demos
+        return demos, save_states
 
     def _get_live_demos(self, amount: int,
                         callable_each_step: Callable[
                             [Observation], None] = None,
-                        max_attempts: int = _MAX_DEMO_ATTEMPTS) -> List[Demo]:
+                        max_attempts: int = _MAX_DEMO_ATTEMPTS,
+                        states: Optional[np.ndarray] = None) -> List[Demo]:
         demos = []
         for i in range(amount):
             attempts = max_attempts
             while attempts > 0:
                 random_seed = np.random.get_state()
-                self.reset()
+                self.reset(states=states)
+                init_states = [np.array(button.get_pose()) for button in self._scene.task.target_buttons]
+                init_states = np.stack(init_states)
+                init_colors = [button.get_color() for button in self._scene.task.target_buttons]
+                init_colors = np.stack(init_colors)
+                save_states = {'pose': init_states, 'color': init_colors}
                 try:
                     demo = self._scene.get_demo(
                         callable_each_step=callable_each_step)
@@ -160,7 +167,7 @@ class TaskEnvironment(object):
             if attempts <= 0:
                 raise RuntimeError(
                     'Could not collect demos. Maybe a problem with the task?')
-        return demos
+        return demos, save_states
 
     def reset_to_demo(self, demo: Demo) -> (List[str], Observation):
         demo.restore_state()

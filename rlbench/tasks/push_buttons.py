@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import itertools
 import math
 import numpy as np
@@ -70,7 +70,7 @@ class PushButtons(Task):
         self.register_waypoint_ability_start(0, self._move_above_next_target)
         self.register_waypoints_should_repeat(self._repeat)
 
-    def init_episode(self, index: int) -> List[str]:
+    def init_episode(self, index: int, states: Optional[dict[str, np.ndarray]] = None) -> List[str]:
         for tp in self.target_topPlates:
             tp.set_color([1.0, 0.0, 0.0])
         for w in self.target_wraps:
@@ -111,9 +111,13 @@ class PushButtons(Task):
                 rtn1 += ', then press the %s button' % self.color_names[i]
                 rtn2 += ', then the %s one' % self.color_names[i]
 
-        b = SpawnBoundary([self.boundaries])
-        for button in self.target_buttons:
-            b.sample(button, min_distance=0.1)
+        if states is None:
+            b = SpawnBoundary([self.boundaries])
+            for button in self.target_buttons:
+                b.sample(button, min_distance=0.1)
+        else:
+            for b_i, button in enumerate(self.target_buttons):
+                button.set_pose(states['pose'][b_i])
 
         num_non_targets = 3 - self.buttons_to_push
         spare_colors = list(set(colors)
@@ -130,12 +134,15 @@ class PushButtons(Task):
                                                 replace=False)
         non_target_index = 0
         for i, button in enumerate(self.target_buttons):
-            if i in range(self.buttons_to_push):
-                pass
+            if states is None:
+                if i in range(self.buttons_to_push):
+                    pass
+                else:
+                    _, rgb = spare_colors[color_choice_indexes[non_target_index]]
+                    button.set_color(rgb)
+                    non_target_index += 1
             else:
-                _, rgb = spare_colors[color_choice_indexes[non_target_index]]
-                button.set_color(rgb)
-                non_target_index += 1
+                button.set_color(tuple(states['color'][i]))
 
         return [rtn0, rtn1, rtn2]
 
